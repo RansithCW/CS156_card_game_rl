@@ -15,6 +15,8 @@ class TNFEnv(gym.Env):
     def __init__(self, seed=None, game_type='mixed', verbose=False):
         super(TNFEnv, self).__init__()
         
+        self.game = ThreeNoughtFourGame(seed=seed) # None for random seed
+        
         self.agent_id = 0 # single agent env
         
         self.verbose = verbose
@@ -30,6 +32,9 @@ class TNFEnv(gym.Env):
         elif game_type == 'greedy':
             self.opponents[2] = GreedyAgent()
             
+        # Pre-allocate the entire state vector once
+        self._state_buffer = np.zeros(150, dtype=np.float32)
+        
         # Create a dummy game to calculate the actual shape once
         example_obs = self._get_obs(0)
         
@@ -39,14 +44,11 @@ class TNFEnv(gym.Env):
             shape=example_obs.shape, # changes if state encoding changes
             dtype=np.float32
         )
-        
+                
         self.action_space = spaces.Discrete(32)  # 32 possible cards to play
         
-        self.game = ThreeNoughtFourGame(seed=seed) # None ?
         self.done = False
         
-        # Pre-allocate the entire state vector once
-        self._state_buffer = np.zeros(self.observation_space.shape, dtype=np.float32)
 
 
     def reset(self, seed=None, options=None):
@@ -158,51 +160,65 @@ class TNFEnv(gym.Env):
     
     def _get_obs(self, player_id):
         # Use 'slices' to update the buffer instead of concatenating
-        # This writes directly to the existing memory
+        # This writes directly to the existing memory        
         game = self.game
         
-        # Reset buffer at start of each observation
+        # 0. Reset buffer (Ensure size is 150 in __init__)
         self._state_buffer.fill(0.0)
         
-        # Hand encoding [32]
+        # 1. Hand encoding [0:31]
         self._state_buffer[0:32] = game.current_hand_masks[player_id]
         
-        # Current Trick [32]
+        # 2. Current Trick [32:63]
         for card, _ in game.current_trick:
             self._state_buffer[32 + card_to_index(card)] = 1.0
             
-        # Highest Card in Trick (32)
+        # 3. Merged Trick Logic: Winner, Highest Card, Partner Flag, Trick Winner ID
         if game.current_trick:
             winner, high_card = game.current_trick_winner()
+            
+            # [64:95] Highest Card bitmask
             self._state_buffer[64 + card_to_index(high_card)] = 1.0
             
-            # 108: Partner winning flag (1) - Updating this slice here saves a second winner check
+            # [108] Partner winning flag
             partner_id = (player_id + 2) % 4
             if winner == partner_id:
                 self._state_buffer[108] = 1.0
-
-        # Lead Suit one-hot (4)
-        if game.current_trick:
+                
+            # [145] Trick winner ID (normalized)
+            self._state_buffer[145] = winner / 3.0
+            
+            # [96:99] Lead Suit one-hot
             lead_suit = game.current_trick[0][0].suit
             self._state_buffer[96 + SUITS.index(lead_suit)] = 1.0
 
-        # Trump Suit one-hot (4)
+        # 4. Trump [100:103] and Position [104:107]
         self._state_buffer[100 + SUITS.index(game.trump_suit)] = 1.0
-
-        # Position in trick one-hot (4)
         self._state_buffer[104 + len(game.current_trick)] = 1.0
 
-        # Trick number (1)
+        # 5. Trick Number [109]
         self._state_buffer[109] = game.trick_number / 8.0
 
-        # Played Cards (32)
+        # 6. Played Cards History [110:141]
         self._state_buffer[110:142] = game.played_cards_mask
 
-        # Points (3)
+        # 7. Points [142:144]
         our_pts = game.team_points[player_id % 2]
         opp_pts = game.team_points[1 - (player_id % 2)]
         self._state_buffer[142] = our_pts / 304.0
         self._state_buffer[143] = opp_pts / 304.0
         self._state_buffer[144] = (our_pts - opp_pts) / 304.0
+        
+        # 8. Cards Remaining Per Suit [146:149]
+        # Counts cards not yet played in each suit
+        for s_idx, suit in enumerate(SUITS):
+            played_in_suit = 0
+            # Each suit has 8 cards in 304 (7,8,9,10,J,Q,K,A)
+            # Assuming your card_to_index maps suits in blocks of 8
+            for r_idx in range(8):
+                if game.played_cards_mask[s_idx * 8 + r_idx] == 1.0:
+                    played_in_suit += 1
+            self._state_buffer[146 + s_idx] = (8 - played_in_suit) / 8.0        
+        
 
         return self._state_buffer.copy()
