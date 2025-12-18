@@ -27,7 +27,7 @@ class SelfPlayCallback(BaseCallback):
             self.training_env.env_method("update_opponents", path)
         return True
 
-def train(game_type='random', total_timesteps=200_000, load_path=None, device='cpu'):
+def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='cuda'):
     # 1. Create Env with the specific opponent type
     def make_env():
         return TNFEnv(game_type=game_type, seed=42)
@@ -87,10 +87,4 @@ def train(game_type='random', total_timesteps=200_000, load_path=None, device='c
 
 if __name__ == "__main__":
     # Example: Start with random
-    train(game_type='random', total_timesteps=100_000) # loss started inc after 75k timesteps
-    
-    # Example: Continue same model against mixed
-    train(game_type='mixed', total_timesteps=150_000, load_path="models/stage_random/tnf_random_100000_steps.zip")
-    
-    # Example: Continue same model against greedy
-    train(game_type='greedy', total_timesteps=300_000, load_path="models/stage_mixed/tnf_mixed_150000_steps.zip")
+    train(game_type='greedy', total_timesteps=500_000)

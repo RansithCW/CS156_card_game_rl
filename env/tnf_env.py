@@ -143,12 +143,12 @@ class TNFEnv(gym.Env):
 
         # 4. Final state check
         obs = self._get_obs(self.agent_id)
-        info = {"action_mask": self.action_masks(),
+        info = {"action_mask": self.action_masks(self.agent_id),
                 "resolved_tricks": resolved_tricks}
         
         return obs, total_reward, self.done, False, info
     
-    def action_masks(self):
+    def action_masks(self, agent_id=None):
         """
         Returns action mask for current legal actions 
         as a numpy array of shape (32,), dtype int8
@@ -252,5 +252,16 @@ class TNFEnv(gym.Env):
             mask = self.action_masks() # Mask for the current opponent
             return opponent.select_action(obs, action_mask=mask)
         
+        agent = self.opponents[player_id]
         # Fallback to existing Random/Greedy logic
-        return opponent.select_action(self.game, player_id)
+        if hasattr(agent, 'model'): 
+                # 1. RL Agent needs the numeric observation vector
+                obs = self._get_obs(player_id) 
+                # 2. It also needs the legal moves mask
+                mask = self.action_masks(player_id)
+                return agent.select_action(obs, action_mask=mask)
+            
+        else:
+            # 3. Greedy/Random Agents need the raw Game Engine
+            # (Using your original GreedyAgent signature: select_action(game, id))
+            return agent.select_action(self.game, player_id)
