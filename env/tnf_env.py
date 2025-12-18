@@ -242,26 +242,17 @@ class TNFEnv(gym.Env):
 
     def _get_opponent_action(self, player_id, obs):
         """Helper to get action from whichever opponent type is currently set."""
-        opponent = self.opponents.get(player_id)
         
-        if opponent is None:
-            raise ValueError(f"No opponent configured for player {player_id}")
-        
-        # If it's our RLAgent, it needs the mask
-        if hasattr(opponent, 'select_action'):
-            mask = self.action_masks() # Mask for the current opponent
-            return opponent.select_action(obs, action_mask=mask)
-        
-        agent = self.opponents[player_id]
+        opponent = self.opponents[player_id]
         # Fallback to existing Random/Greedy logic
-        if hasattr(agent, 'model'): 
+        if hasattr(opponent, 'model'): 
                 # 1. RL Agent needs the numeric observation vector
                 obs = self._get_obs(player_id) 
                 # 2. It also needs the legal moves mask
                 mask = self.action_masks(player_id)
-                return agent.select_action(obs, action_mask=mask)
+                return opponent.select_action(obs, action_mask=mask)
             
         else:
             # 3. Greedy/Random Agents need the raw Game Engine
             # (Using your original GreedyAgent signature: select_action(game, id))
-            return agent.select_action(self.game, player_id)
+            return opponent.select_action(self.game, player_id)

@@ -27,7 +27,7 @@ class SelfPlayCallback(BaseCallback):
             self.training_env.env_method("update_opponents", path)
         return True
 
-def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='cuda'):
+def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='cpu'):
     # 1. Create Env with the specific opponent type
     def make_env():
         return TNFEnv(game_type=game_type, seed=42)
