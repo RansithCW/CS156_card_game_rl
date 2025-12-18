@@ -1,4 +1,6 @@
 #TODO: Gym wrapper for TNF 
+import re
+from tabnanny import verbose
 from agents.greedy_agent import GreedyAgent
 from agents.random_agent import RandomAgent
 import gymnasium as gym
@@ -9,10 +11,12 @@ from env.game_engine.rl_engine import ThreeNoughtFourGame
 from env.game_engine.state_encoder import encode_state
 
 class TNFEnv(gym.Env):
-    def __init__(self, seed=None, game_type='mixed'):
+    def __init__(self, seed=None, game_type='mixed', verbose=False):
         super(TNFEnv, self).__init__()
         
         self.agent_id = 0 # single agent env
+        
+        self.verbose = verbose
         
         self.opponents = {
             1: GreedyAgent(),
@@ -28,7 +32,7 @@ class TNFEnv(gym.Env):
         self.observation_space = spaces.Box(
             low = 0.0,
             high = 1.0,
-            shape=(110,),
+            shape=(145,), # change this if state encoding changes
             dtype=np.float32
         )
         
@@ -43,6 +47,7 @@ class TNFEnv(gym.Env):
         
         self.game = ThreeNoughtFourGame(seed=seed)
         self.done = False
+        tricks = []
         
         # Autoplay until agent's turn
         while self.game.current_player != self.agent_id:
@@ -51,10 +56,13 @@ class TNFEnv(gym.Env):
             self.game.play_card(pid, card)
 
             if len(self.game.current_trick) == 4:
-                self.game.resolve_trick()
+                reward, tricks = self._process_trick_resolution()
         
         obs = encode_state(self.game, self.agent_id)
-        info = {"action_mask": self._action_mask()}
+        
+        info = {"action_mask": self._action_mask(),
+                "resolved_tricks": tricks,
+                }
         
         return obs, info
     
@@ -62,17 +70,31 @@ class TNFEnv(gym.Env):
     def _process_trick_resolution(self):
         """Helper to resolve tricks and assign rewards."""
         reward = 0.0
+        resolved_tricks = []
+        
         while len(self.game.current_trick) >= 4:
-            winner, points = self.game.resolve_trick()
-            # If agent or agent's partner (team 0 & 2) wins
+            # record trick before resolving
+            trick_cards = [str(c) for c, _ in self.game.current_trick]
+            
+            winner, points, cards = self.game.resolve_trick(verbose=self.verbose)
+            
+            # Team Scoring
+            # If agent or partner (team 0 & 2) wins, add pts
             if winner % 2 == self.agent_id % 2:
                 reward += points
             else:
                 reward -= points
+                
+            if cards is not None:
+                resolved_tricks.append({
+                    "winnder": winner,
+                    "cards": [str(c) for c, _ in cards],
+                    "points": points
+                })
             
             if self.game.is_terminal():
                 self.done = True
-        return reward
+        return reward, resolved_tricks
 
     def step(self, action):
         if self.done:
@@ -85,16 +107,20 @@ class TNFEnv(gym.Env):
                 -50.0, # negative reward
                 True, # done
                 False,
-                {"action_mask": self._action_mask()},
+                {"action_mask": self._action_mask(),
+                 "resolved_tricks": []},
             )
             
         total_reward = 0.0
+        resolved_tricks = []
 
         # 1. Agent plays
         self.game.play_card(self.agent_id, action)
         
         # 2. Check if agent's card finished the trick
-        total_reward += self._process_trick_resolution()
+        r, tricks = self._process_trick_resolution()
+        total_reward += r
+        resolved_tricks.extend(tricks)
 
         # 3. Autoplay opponents until it's agent's turn or game ends
         while not self.done and self.game.current_player != self.agent_id:
@@ -102,11 +128,14 @@ class TNFEnv(gym.Env):
             card = self.opponents[pid].select_action(self.game, pid)
             self.game.play_card(pid, card)
             
-            total_reward += self._process_trick_resolution()
+            r, tricks = self._process_trick_resolution()
+            total_reward += r
+            resolved_tricks.extend(tricks)
 
         # 4. Final state check
         obs = encode_state(self.game, self.agent_id)
-        info = {"action_mask": self._action_mask()}
+        info = {"action_mask": self._action_mask(),
+                "resolved_tricks": resolved_tricks}
         
 
         return obs, total_reward, self.done, False, info

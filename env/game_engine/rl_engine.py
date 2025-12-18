@@ -5,6 +5,7 @@ from env.game_engine.constants import (
 )
 from env.game_engine.game_engine import Card
 import random
+import numpy as np
 
 NUM_RANKS = len(RANKS)
 NUM_SUITS = len(SUITS)
@@ -33,14 +34,21 @@ class ThreeNoughtFourGame: # have to define game without async for training
         self.trump_suit = self.rng.choice(SUITS)
 
         self.hands = [list() for _ in range(4)]
-        self.tricks_won = [[] for _ in range(4)]
 
         self.lead_player = 0
         self.current_trick = []  # [(card, player_id)]
         
         self.trick_number = 0
-
+        
+        self.team_points = [0, 0] # Team 0 (P0, P2) and Team 1 (P1, P3)
+        self.played_cards_mask = np.zeros(32, dtype=np.float32) # Pre-allocated
+        self.current_hand_masks = [np.zeros(32, dtype=np.float32) for _ in range(4)]
+        
         self._deal()
+        # Initialize hand masks after dealing
+        for pid in range(4):
+            for card in self.hands[pid]:
+                self.current_hand_masks[pid][card_to_index(card)] = 1.0
         
     def _deal(self):
         deck = [Card(s, r) for s in SUITS for r in RANKS]
@@ -76,7 +84,15 @@ class ThreeNoughtFourGame: # have to define game without async for training
         assert card_idx in self.legal_actions(player_id), "Illegal Move"
 
         card = index_to_card(card_idx)
+        
+        # 1. Update hand mask (Remove card)
+        self.current_hand_masks[player_id][card_idx] = 0.0
+        
+        # 2. Update played cards mask (Add card)
+        self.played_cards_mask[card_idx] = 1.0
+        
         self.hands[player_id].remove(card)
+        
         self.current_trick.append((card, player_id))
 
     def card_value(self, card):
@@ -88,23 +104,25 @@ class ThreeNoughtFourGame: # have to define game without async for training
         else:
             return 0
 
-    def resolve_trick(self):
-        lead_suit = self.current_trick[0][0].suit
+    def resolve_trick(self, verbose=False):
+        cards_in_trick = list(self.current_trick) if verbose else None
 
         winner_card, winner = max(
             self.current_trick,
-            key=lambda x: self.card_value(x[0])
+            key=lambda x: x[0].value
         )
 
-        points = sum(POINTS[c.rank] for c, _ in self.current_trick)
-        self.tricks_won[winner].extend(c for c, _ in self.current_trick)
-
+        points = sum(c.value for c, _ in self.current_trick)
+        
+        # Update team points incrementally
+        self.team_points[winner % 2] += points
+        
+        # State cleanup
         self.current_trick = []
         self.lead_player = winner
-        
         self.trick_number += 1
 
-        return winner, points
+        return winner, points, cards_in_trick
     
     def current_trick_winner(self):
         """
@@ -113,10 +131,7 @@ class ThreeNoughtFourGame: # have to define game without async for training
         """
         lead_suit = self.current_trick[0][0].suit
         
-        high_card, winner = max(
-        self.current_trick,
-        key=lambda x: self.card_value(x[0])
-        )
+        high_card, winner = max(self.current_trick, key=lambda x: x[0].value)
         return winner, high_card
 
     

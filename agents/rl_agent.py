@@ -28,10 +28,11 @@ class RLAgent:
             obs_tensor = torch.as_tensor(obs).to(self.model.device)
             dist = self.model.policy.get_distribution(obs_tensor)
 
-            logits = dist.distribution.logits.clone()
+            logits = dist.distribution.logits.clone() # shape [1, 32]
 
-            mask = torch.as_tensor(action_mask).to(logits.device)
-            logits[mask == 0] = -1e8
+            mask = torch.as_tensor(action_mask).to(logits.device) #[32]
+            logits[:, mask == 0] = -1e8
 
             action = torch.argmax(logits, dim=1)
+            
             return int(action.item())

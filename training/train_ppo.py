@@ -19,7 +19,7 @@ from env.tnf_env import TNFEnv
 
 def make_env():
     def _init():
-        return TNFEnv()
+        return TNFEnv(game_type='random', seed=SEED)
     return _init
 
 
@@ -41,7 +41,7 @@ def train():
         device="cpu" # CPU Faster for PPO than GPU
     )
 
-    model.learn(total_timesteps=300_000)
+    model.learn(total_timesteps=200_000)
 
     os.makedirs("models", exist_ok=True)
     model.save("models/tnf_ppo")

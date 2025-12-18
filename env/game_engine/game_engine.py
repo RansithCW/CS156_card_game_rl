@@ -28,6 +28,7 @@ class Card:
         """
         self.suit = suit
         self.rank = rank
+        self.value = POINTS[rank]
 
     def __str__(self):
         """
@@ -47,7 +48,7 @@ class Card:
         Note:
             This method assumes a global RANKS list that defines the order of ranks.
         """
-        return RANKS.index(self.rank) < RANKS.index(other.rank)
+        return self.value < other.value
     
     def __eq__(self, other):
         """
