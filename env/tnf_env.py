@@ -7,8 +7,9 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 
-from env.game_engine.rl_engine import ThreeNoughtFourGame
+from env.game_engine.rl_engine import ThreeNoughtFourGame, card_to_index
 from env.game_engine.state_encoder import encode_state
+from env.game_engine.constants import SUITS
 
 class TNFEnv(gym.Env):
     def __init__(self, seed=None, game_type='mixed', verbose=False):
@@ -30,8 +31,7 @@ class TNFEnv(gym.Env):
             self.opponents[2] = GreedyAgent()
             
         # Create a dummy game to calculate the actual shape once
-        dummy_game = ThreeNoughtFourGame()
-        example_obs = encode_state(dummy_game, 0)
+        example_obs = self._get_obs(0)
         
         self.observation_space = spaces.Box(
             low = 0.0,
@@ -44,6 +44,9 @@ class TNFEnv(gym.Env):
         
         self.game = ThreeNoughtFourGame(seed=seed) # None ?
         self.done = False
+        
+        # Pre-allocate the entire state vector once
+        self._state_buffer = np.zeros(self.observation_space.shape, dtype=np.float32)
 
 
     def reset(self, seed=None, options=None):
@@ -62,11 +65,10 @@ class TNFEnv(gym.Env):
             if len(self.game.current_trick) == 4:
                 reward, tricks = self._process_trick_resolution()
         
-        obs = encode_state(self.game, self.agent_id)
+        obs = self._get_obs(self.agent_id)
         
         info = {"action_mask": self._action_mask(),
-                "resolved_tricks": tricks,
-                }
+                "resolved_tricks": tricks,}
         
         return obs, info
     
@@ -107,7 +109,7 @@ class TNFEnv(gym.Env):
         if action not in self.game.legal_actions(self.agent_id):
             # Illegal action → strong negative reward + terminate
             return (
-                encode_state(self.game, self.agent_id),
+                self._get_obs(self.agent_id),
                 -50.0, # negative reward
                 True, # done
                 False,
@@ -137,7 +139,7 @@ class TNFEnv(gym.Env):
             resolved_tricks.extend(tricks)
 
         # 4. Final state check
-        obs = encode_state(self.game, self.agent_id)
+        obs = self._get_obs(self.agent_id)
         info = {"action_mask": self._action_mask(),
                 "resolved_tricks": resolved_tricks}
         
@@ -153,3 +155,54 @@ class TNFEnv(gym.Env):
         for a in self.game.legal_actions(self.agent_id):
             mask[a] = 1
         return mask
+    
+    def _get_obs(self, player_id):
+        # Use 'slices' to update the buffer instead of concatenating
+        # This writes directly to the existing memory
+        game = self.game
+        
+        # Reset buffer at start of each observation
+        self._state_buffer.fill(0.0)
+        
+        # Hand encoding [32]
+        self._state_buffer[0:32] = game.current_hand_masks[player_id]
+        
+        # Current Trick [32]
+        for card, _ in game.current_trick:
+            self._state_buffer[32 + card_to_index(card)] = 1.0
+            
+        # Highest Card in Trick (32)
+        if game.current_trick:
+            winner, high_card = game.current_trick_winner()
+            self._state_buffer[64 + card_to_index(high_card)] = 1.0
+            
+            # 108: Partner winning flag (1) - Updating this slice here saves a second winner check
+            partner_id = (player_id + 2) % 4
+            if winner == partner_id:
+                self._state_buffer[108] = 1.0
+
+        # Lead Suit one-hot (4)
+        if game.current_trick:
+            lead_suit = game.current_trick[0][0].suit
+            self._state_buffer[96 + SUITS.index(lead_suit)] = 1.0
+
+        # Trump Suit one-hot (4)
+        self._state_buffer[100 + SUITS.index(game.trump_suit)] = 1.0
+
+        # Position in trick one-hot (4)
+        self._state_buffer[104 + len(game.current_trick)] = 1.0
+
+        # Trick number (1)
+        self._state_buffer[109] = game.trick_number / 8.0
+
+        # Played Cards (32)
+        self._state_buffer[110:142] = game.played_cards_mask
+
+        # Points (3)
+        our_pts = game.team_points[player_id % 2]
+        opp_pts = game.team_points[1 - (player_id % 2)]
+        self._state_buffer[142] = our_pts / 304.0
+        self._state_buffer[143] = opp_pts / 304.0
+        self._state_buffer[144] = (our_pts - opp_pts) / 304.0
+
+        return self._state_buffer.copy()
