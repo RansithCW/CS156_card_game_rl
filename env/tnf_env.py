@@ -217,3 +217,40 @@ class TNFEnv(gym.Env):
         
 
         return self._state_buffer.copy()
+    
+    def update_opponents(self, model_path):
+        """Called by the training callback to swap opponent logic to a frozen model."""
+        from sb3_contrib import MaskablePPO
+        from agents.rl_agent import RLAgent
+        
+        # Load the latest snapshot
+        frozen_model = MaskablePPO.load(model_path)
+        
+        # Wrap it in our RLAgent helper (using deterministic=False for variety)
+        new_rl_opponent = RLAgent(frozen_model, deterministic=False)
+        
+        # Update your internal opponent list (Players 1, 2, 3)
+        # Note: Player 0 is the one being trained
+        self.opponents = {
+            1: new_rl_opponent,
+            2: new_rl_opponent,
+            3: new_rl_opponent
+        }
+        
+        if self.verbose:
+            print(f"--- Opponents updated to snapshot: {model_path} ---")
+
+    def _get_opponent_action(self, player_id, obs):
+        """Helper to get action from whichever opponent type is currently set."""
+        opponent = self.opponents.get(player_id)
+        
+        if opponent is None:
+            raise ValueError(f"No opponent configured for player {player_id}")
+        
+        # If it's our RLAgent, it needs the mask
+        if hasattr(opponent, 'select_action'):
+            mask = self.action_masks() # Mask for the current opponent
+            return opponent.select_action(obs, action_mask=mask)
+        
+        # Fallback to existing Random/Greedy logic
+        return opponent.select_action(self.game, player_id)
