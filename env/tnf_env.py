@@ -100,8 +100,8 @@ class TNFEnv(gym.Env):
             if self.game.is_terminal():
                 self.done = True
                 # Final reward adjustment based on total points
-                reward += 10.0 * (self.game.team_points[self.agent_id % 2] -154.0) / 304.0
-                # give more reward for scoring more than half the points, increasin with higher pts
+                reward += 50.0 if self.game.team_points[self.agent_id % 2] > self.game.team_points[1 - (self.agent_id % 2)] else -50.0
+                # penalty for losing, vs. small bonus for winning
                 
         return reward, resolved_tricks
 
@@ -109,16 +109,16 @@ class TNFEnv(gym.Env):
         if self.done:
             raise RuntimeError("Episode is done. Call reset().")
         
-        if action not in self.game.legal_actions(self.agent_id):
-            # Illegal action → strong negative reward + terminate
-            return (
-                self._get_obs(self.agent_id),
-                -50.0, # negative reward
-                True, # done
-                False,
-                {"action_mask": self.action_masks(),
-                 "resolved_tricks": []},
-            )
+        # if action not in self.game.legal_actions(self.agent_id):
+        #     # Illegal action → strong negative reward + terminate
+        #     return (
+        #         self._get_obs(self.agent_id),
+        #         -50.0, # negative reward
+        #         True, # done
+        #         False,
+        #         {"action_mask": self.action_masks(),
+        #          "resolved_tricks": []},
+        #     )
             
         total_reward = 0.0
         resolved_tricks = []
@@ -128,7 +128,7 @@ class TNFEnv(gym.Env):
         
         # 2. Check if agent's card finished the trick
         r, tricks = self._process_trick_resolution()
-        total_reward += r
+        total_reward += r 
         resolved_tricks.extend(tricks)
 
         # 3. Autoplay opponents until it's agent's turn or game ends
@@ -146,7 +146,6 @@ class TNFEnv(gym.Env):
         info = {"action_mask": self.action_masks(),
                 "resolved_tricks": resolved_tricks}
         
-
         return obs, total_reward, self.done, False, info
     
     def action_masks(self):

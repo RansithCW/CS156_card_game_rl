@@ -3,7 +3,7 @@ import numpy as np
 import os
 import gymnasium as gym
 from sb3_contrib import MaskablePPO
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 from env.tnf_env import TNFEnv
 
@@ -17,7 +17,13 @@ def train(game_type='random', total_timesteps=200_000, load_path=None, device='c
     def make_env():
         return TNFEnv(game_type=game_type, seed=42)
     
-    env = DummyVecEnv([make_env])
+    venv = DummyVecEnv([make_env])
+        
+    # Add Normalization
+    # norm_obs: scales the 150-dim observation vector
+    # norm_reward: scales the 0-304 rewards
+    # Needed as tricks can vary widely from 0 to 71 pts
+    env = VecNormalize(venv, norm_obs=True, norm_reward=True, clip_obs=10.)
 
     # Log directory for TensorBoard plots
     log_dir = f"./logs/tnf_{game_type}/"
@@ -56,7 +62,7 @@ def train(game_type='random', total_timesteps=200_000, load_path=None, device='c
 
 if __name__ == "__main__":
     # Example: Start with random
-    # train(game_type='random', total_timesteps=100_000) # loss started inc after 75k timesteps
+    train(game_type='random', total_timesteps=100_000) # loss started inc after 75k timesteps
     
     # Example: Continue same model against mixed
     train(game_type='mixed', total_timesteps=150_000, load_path="models/stage_random/tnf_random_100000_steps.zip")
