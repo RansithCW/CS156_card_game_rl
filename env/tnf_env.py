@@ -7,7 +7,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 
-from env.game_engine.rl_engine import ThreeNoughtFourGame, card_to_index
+from env.game_engine.rl_engine import ThreeNoughtFourGame, card_to_index, index_to_card
 from env.game_engine.state_encoder import encode_state
 from env.game_engine.constants import SUITS
 
@@ -69,7 +69,7 @@ class TNFEnv(gym.Env):
         
         obs = self._get_obs(self.agent_id)
         
-        info = {"action_mask": self._action_mask(),
+        info = {"action_mask": self.action_masks(),
                 "resolved_tricks": tricks,}
         
         return obs, info
@@ -81,9 +81,6 @@ class TNFEnv(gym.Env):
         resolved_tricks = []
         
         while len(self.game.current_trick) >= 4:
-            # record trick before resolving
-            trick_cards = [str(c) for c, _ in self.game.current_trick]
-            
             winner, points, cards = self.game.resolve_trick(verbose=self.verbose)
             
             # Team Scoring
@@ -93,15 +90,19 @@ class TNFEnv(gym.Env):
             else:
                 reward -= points
                 
-            if cards is not None:
+            if self.verbose and cards is not None:
                 resolved_tricks.append({
                     "winnder": winner,
-                    "cards": [str(c) for c, _ in cards],
+                    "cards": [str(index_to_card(c_id)) for c_id, _ in cards],
                     "points": points
                 })
             
             if self.game.is_terminal():
                 self.done = True
+                # Final reward adjustment based on total points
+                reward += 10.0 * (self.game.team_points[self.agent_id % 2] -154.0) / 304.0
+                # give more reward for scoring more than half the points, increasin with higher pts
+                
         return reward, resolved_tricks
 
     def step(self, action):
@@ -115,7 +116,7 @@ class TNFEnv(gym.Env):
                 -50.0, # negative reward
                 True, # done
                 False,
-                {"action_mask": self._action_mask(),
+                {"action_mask": self.action_masks(),
                  "resolved_tricks": []},
             )
             
@@ -142,20 +143,20 @@ class TNFEnv(gym.Env):
 
         # 4. Final state check
         obs = self._get_obs(self.agent_id)
-        info = {"action_mask": self._action_mask(),
+        info = {"action_mask": self.action_masks(),
                 "resolved_tricks": resolved_tricks}
         
 
         return obs, total_reward, self.done, False, info
     
-    def _action_mask(self):
+    def action_masks(self):
         """
         Returns action mask for current legal actions 
         as a numpy array of shape (32,), dtype int8
         """
-        mask = np.zeros(self.action_space.n, dtype=np.int8)
-        for a in self.game.legal_actions(self.agent_id):
-            mask[a] = 1
+        mask = np.zeros(32, dtype=bool)
+        for action_idx in self.game.legal_actions(self.agent_id):
+            mask[action_idx] = True
         return mask
     
     def _get_obs(self, player_id):
@@ -170,15 +171,15 @@ class TNFEnv(gym.Env):
         self._state_buffer[0:32] = game.current_hand_masks[player_id]
         
         # 2. Current Trick [32:63]
-        for card, _ in game.current_trick:
-            self._state_buffer[32 + card_to_index(card)] = 1.0
+        for c_idx, _ in game.current_trick:
+            self._state_buffer[32 + c_idx] = 1.0
             
         # 3. Merged Trick Logic: Winner, Highest Card, Partner Flag, Trick Winner ID
         if game.current_trick:
-            winner, high_card = game.current_trick_winner()
+            winner, high_card_idx = game.current_trick_winner()
             
             # [64:95] Highest Card bitmask
-            self._state_buffer[64 + card_to_index(high_card)] = 1.0
+            self._state_buffer[64 + high_card_idx] = 1.0
             
             # [108] Partner winning flag
             partner_id = (player_id + 2) % 4
@@ -189,11 +190,11 @@ class TNFEnv(gym.Env):
             self._state_buffer[145] = winner / 3.0
             
             # [96:99] Lead Suit one-hot
-            lead_suit = game.current_trick[0][0].suit
-            self._state_buffer[96 + SUITS.index(lead_suit)] = 1.0
+            lead_suit_idx = game.current_trick[0][0] // 8
+            self._state_buffer[96 + lead_suit_idx] = 1.0
 
         # 4. Trump [100:103] and Position [104:107]
-        self._state_buffer[100 + SUITS.index(game.trump_suit)] = 1.0
+        self._state_buffer[100 + game.trump_suit_idx] = 1.0
         self._state_buffer[104 + len(game.current_trick)] = 1.0
 
         # 5. Trick Number [109]
@@ -211,14 +212,9 @@ class TNFEnv(gym.Env):
         
         # 8. Cards Remaining Per Suit [146:149]
         # Counts cards not yet played in each suit
-        for s_idx, suit in enumerate(SUITS):
-            played_in_suit = 0
-            # Each suit has 8 cards in 304 (7,8,9,10,J,Q,K,A)
-            # Assuming your card_to_index maps suits in blocks of 8
-            for r_idx in range(8):
-                if game.played_cards_mask[s_idx * 8 + r_idx] == 1.0:
-                    played_in_suit += 1
-            self._state_buffer[146 + s_idx] = (8 - played_in_suit) / 8.0        
+        # Reshape (32,) -> (4, 8), sum across the ranks, then normalize
+        played_per_suit = game.played_cards_mask.reshape(4, 8).sum(axis=1)
+        self._state_buffer[146:150] = (8.0 - played_per_suit) / 8.0        
         
 
         return self._state_buffer.copy()

@@ -1,7 +1,8 @@
+from pyparsing import nums
 from env.game_engine.constants import (
     SUITS,
     RANKS,
-    POINTS,
+    POINT_LOOKUP,
 )
 from env.game_engine.game_engine import Card
 import random
@@ -31,12 +32,12 @@ def index_to_card(idx: int) -> Card:
 class ThreeNoughtFourGame: # have to define game without async for training
     def __init__(self, seed=None):
         self.rng = random.Random(seed)
-        self.trump_suit = self.rng.choice(SUITS)
+        self.trump_suit_idx = self.rng.randint(0, NUM_SUITS - 1)
+        self.trump_suit = SUITS[self.trump_suit_idx]
 
         self.hands = [list() for _ in range(4)]
-
         self.lead_player = 0
-        self.current_trick = []  # [(card, player_id)]
+        self.current_trick = []  # [(card_idx, player_id)]
         
         self.trick_number = 0
         
@@ -45,30 +46,32 @@ class ThreeNoughtFourGame: # have to define game without async for training
         self.current_hand_masks = [np.zeros(32, dtype=np.float32) for _ in range(4)]
         
         self._deal()
-        # Initialize hand masks after dealing
-        for pid in range(4):
-            for card in self.hands[pid]:
-                self.current_hand_masks[pid][card_to_index(card)] = 1.0
+
         
     def _deal(self):
-        deck = [Card(s, r) for s in SUITS for r in RANKS]
+        deck = list(range(NUM_CARDS))
         self.rng.shuffle(deck)
 
         for i in range(4):
             self.hands[i] = deck[i * 8:(i + 1) * 8]
+            # update masks using indices
+            for card_idx in self.hands[i]:
+                self.current_hand_masks[i][card_idx] = 1.0
 
 
     def legal_actions(self, player_id: int) -> list[int]:
         hand = self.hands[player_id]
 
         if not self.current_trick:
-            return [card_to_index(c) for c in hand]  # any card at start of trick
+            return hand  # any card at start of trick
 
-        lead_suit = self.current_trick[0][0].suit
-
-        follow = [c for c in hand if c.suit == lead_suit]
+# Fast Suit Check: index // 8 gives the suit_idx
+        lead_card_idx = self.current_trick[0][0]
+        lead_suit_idx = lead_card_idx // 8
+        
+        follow = [c_idx for c_idx in hand if (c_idx // 8) == lead_suit_idx]
         if follow:
-            return [card_to_index(c) for c in follow]
+            return follow
 
         # TODO: Double check if we need to force trumping if can't answer to lead suit
         
@@ -76,14 +79,12 @@ class ThreeNoughtFourGame: # have to define game without async for training
         # if trump_cards:
         #     return [card_to_index(c) for c in trump_cards]
 
-        return [card_to_index(c) for c in hand]
+        return hand
 
 
     def play_card(self, player_id: int, card_idx: int):
 
         assert card_idx in self.legal_actions(player_id), "Illegal Move"
-
-        card = index_to_card(card_idx)
         
         # 1. Update hand mask (Remove card)
         self.current_hand_masks[player_id][card_idx] = 0.0
@@ -91,33 +92,40 @@ class ThreeNoughtFourGame: # have to define game without async for training
         # 2. Update played cards mask (Add card)
         self.played_cards_mask[card_idx] = 1.0
         
-        self.hands[player_id].remove(card)
+        self.hands[player_id].remove(card_idx)
         
-        self.current_trick.append((card, player_id))
+        self.current_trick.append((card_idx, player_id))
 
-    def card_value(self, card):
-        lead_suit = self.current_trick[0][0].suit
-        if card.suit == self.trump_suit:
-            return 50 + POINTS[card.rank]
-        elif card.suit == lead_suit:
-            return POINTS[card.rank]
-        else:
-            return 0
+    def _get_card_strength(self, card_idx):
+        """Helper to determine trick winner using integer math"""
+        suit_idx = card_idx // 8
+        rank_idx = card_idx % 8
+        
+        lead_suit_idx = self.current_trick[0][0] // 8
+        
+        # Trump gets highest base weight
+        if suit_idx == self.trump_suit_idx:
+            return 50 + POINT_LOOKUP[rank_idx]
+        # Lead suit gets medium base weight
+        elif suit_idx == lead_suit_idx:
+            return POINT_LOOKUP[rank_idx]
+        # Others have no winning power
+        return 0
 
     def resolve_trick(self, verbose=False):
-        cards_in_trick = list(self.current_trick) if verbose else None
 
         winner_card, winner = max(
             self.current_trick,
-            key=lambda x: x[0].value
+            key=lambda x: self._get_card_strength(x[0])
         )
 
-        points = sum(c.value for c, _ in self.current_trick)
+        points = sum(POINT_LOOKUP[c_idx % 8] for c_idx, _ in self.current_trick)
         
         # Update team points incrementally
         self.team_points[winner % 2] += points
         
         # State cleanup
+        cards_in_trick = list(self.current_trick) if verbose else None
         self.current_trick = []
         self.lead_player = winner
         self.trick_number += 1
@@ -129,10 +137,11 @@ class ThreeNoughtFourGame: # have to define game without async for training
         Returns player_id and highest card of current trick without resolving
         Assumes current_trick is non-empty
         """
-        lead_suit = self.current_trick[0][0].suit
-        
-        high_card, winner = max(self.current_trick, key=lambda x: x[0].value)
-        return winner, high_card
+        winnder_card_idx, winner = max(
+            self.current_trick,
+            key=lambda x: self._get_card_strength(x[0])
+        )
+        return winner, winnder_card_idx
 
     
     def is_terminal(self):
