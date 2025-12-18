@@ -28,11 +28,15 @@ class TNFEnv(gym.Env):
             self.opponents[3] = RandomAgent()
         elif game_type == 'greedy':
             self.opponents[2] = GreedyAgent()
+            
+        # Create a dummy game to calculate the actual shape once
+        dummy_game = ThreeNoughtFourGame()
+        example_obs = encode_state(dummy_game, 0)
         
         self.observation_space = spaces.Box(
             low = 0.0,
             high = 1.0,
-            shape=(145,), # change this if state encoding changes
+            shape=example_obs.shape, # changes if state encoding changes
             dtype=np.float32
         )
         
