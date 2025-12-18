@@ -65,4 +65,4 @@ if __name__ == "__main__":
     train(game_type='mixed', total_timesteps=150_000, load_path="models/stage_random/tnf_random_300000steps.zip")
     
     # Example: Continue same model against greedy
-    train(game_type='greedy', total_timesteps=300_000, load_path="models/stage_random/tnf_mixed_300000steps.zip")
+    train(game_type='greedy', total_timesteps=300_000, load_path="models/stage_mixed/tnf_mixed_300000steps.zip")

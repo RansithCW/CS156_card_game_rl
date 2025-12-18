@@ -4,6 +4,8 @@ from env.tnf_env import TNFEnv
 from agents.random_agent import RandomAgent
 from agents.greedy_agent import GreedyAgent
 
+from agents.rl_agent import RLAgent
+from stable_baselines3 import PPO
 
 def run_episode(env, agents, render=False):
     obs, info = env.reset()
@@ -22,12 +24,15 @@ def run_episode(env, agents, render=False):
 
     return total_reward
 
-def evaluate(num_episodes: int = 100, render: bool = False):
+def evaluate(num_episodes: int = 100, render: bool = False, model_path: str = "models/stage_random/tnf_random_300000steps.zip"):
     env = TNFEnv()
+    
+    # Load trained model
+    model = PPO.load(model_path, device='cpu')
     
     # change agents here
     agents = {
-        0: GreedyAgent(),
+        0: RLAgent(model),
         1: RandomAgent(),
         2: RandomAgent(),
         3: GreedyAgent(),
@@ -42,4 +47,4 @@ def evaluate(num_episodes: int = 100, render: bool = False):
     
 
 if __name__ == "__main__":
-    evaluate(200)
+    evaluate(500) # run agent over 500 games
