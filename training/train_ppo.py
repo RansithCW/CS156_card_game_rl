@@ -27,7 +27,15 @@ class SelfPlayCallback(BaseCallback):
             self.training_env.env_method("update_opponents", path)
         return True
 
-def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='cpu', check_freq=50_000, logging=False):
+def train(
+    game_type='greedy', 
+    total_timesteps=200_000, 
+    load_path=None, 
+    device='cpu', 
+    check_freq=50_000, 
+    logging=False,
+    version=1
+    ):
     # 1. Create Env with the specific opponent type
     def make_env():
         return TNFEnv(game_type=game_type, seed=42)
@@ -42,7 +50,7 @@ def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='c
 
     # Log directory for TensorBoard plots
     log_dir = f"./logs/tnf_{game_type}/"
-    snapshot_dir = f"./models/snapshots_{game_type}/" # Folder for self-play history    
+    snapshot_dir = f"./models/snapshots_{game_type}_{version}/" # Folder for self-play history    
     
     # 2. LOAD or CREATE model
     if load_path and os.path.exists(load_path):
