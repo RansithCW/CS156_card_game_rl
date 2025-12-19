@@ -5,7 +5,7 @@ from agents.random_agent import RandomAgent
 from agents.greedy_agent import GreedyAgent
 
 from agents.rl_agent import RLAgent
-from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
 
 def run_episode(env, agents, render=False):
     obs, info = env.reset()
@@ -14,7 +14,9 @@ def run_episode(env, agents, render=False):
 
     while not done:
         pid = env.agent_id
-        action = agents[pid].select_action(env.game, pid)
+        
+        obs = env._get_obs(pid)
+        action = agents[pid].select_action(obs, info.get("action_mask"))  # Ensure opponents have played if needed
         
         obs, reward, done, _, info = env.step(action)
         total_reward += reward
@@ -28,7 +30,7 @@ def evaluate(num_episodes: int = 100, render: bool = False, model_path: str = "m
     env = TNFEnv()
     
     # Load trained model
-    model = PPO.load(model_path, device='cpu')
+    model = MaskablePPO.load(model_path, device='cpu')
     
     # change agents here
     agents = {
