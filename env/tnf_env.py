@@ -1,4 +1,5 @@
 #TODO: Gym wrapper for TNF 
+from pickle import NONE
 import re
 from tabnanny import verbose
 from agents.greedy_agent import GreedyAgent
@@ -148,13 +149,15 @@ class TNFEnv(gym.Env):
         
         return obs, total_reward, self.done, False, info
     
-    def action_masks(self, agent_id=None):
+    def action_masks(self, agent_idx=None):
         """
         Returns action mask for current legal actions 
         as a numpy array of shape (32,), dtype int8
         """
+        if agent_idx is None:
+            agent_idx = self.agent_id
         mask = np.zeros(32, dtype=bool)
-        for action_idx in self.game.legal_actions(self.agent_id):
+        for action_idx in self.game.legal_actions(agent_idx):
             mask[action_idx] = True
         return mask
     

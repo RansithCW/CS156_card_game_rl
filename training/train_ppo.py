@@ -27,7 +27,7 @@ class SelfPlayCallback(BaseCallback):
             self.training_env.env_method("update_opponents", path)
         return True
 
-def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='cpu'):
+def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='cpu', check_freq=50_000):
     # 1. Create Env with the specific opponent type
     def make_env():
         return TNFEnv(game_type=game_type, seed=42)
@@ -63,7 +63,7 @@ def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='c
     # 3. Setup Self-Play Callback
     # check_freq: how often to update opponents (e.g., every 50,000 steps)
     self_play_callback = SelfPlayCallback(
-        check_freq=50000, 
+        check_freq=check_freq, 
         save_path=snapshot_dir
     )
 
