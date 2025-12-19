@@ -27,7 +27,7 @@ class SelfPlayCallback(BaseCallback):
             self.training_env.env_method("update_opponents", path)
         return True
 
-def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='cpu', check_freq=50_000):
+def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='cpu', check_freq=50_000, logging=False):
     # 1. Create Env with the specific opponent type
     def make_env():
         return TNFEnv(game_type=game_type, seed=42)
@@ -56,7 +56,7 @@ def train(game_type='greedy', total_timesteps=200_000, load_path=None, device='c
             verbose=1,
             ent_coef=0.01, # Keep exploration high during early stages
             learning_rate=3e-4,
-            tensorboard_log=log_dir,
+            tensorboard_log=log_dir if logging else None,
             device=device
         )
 
