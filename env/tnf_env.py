@@ -13,7 +13,7 @@ from env.game_engine.constants import SUITS
 
 class TNFEnv(gym.Env):
     def __init__(self, seed=None, game_type='mixed', verbose=False):
-        super(TNFEnv, self).__init__()
+        super().__init__()
         
         self.game = ThreeNoughtFourGame(seed=seed) # None for random seed
         
