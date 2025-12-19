@@ -34,7 +34,7 @@ class TNFEnv(gym.Env):
             self.opponents[2] = GreedyAgent()
             
         # Pre-allocate the entire state vector once
-        self._state_buffer = np.zeros(150, dtype=np.float32)
+        self._state_buffer = np.zeros(214, dtype=np.float32)
         
         # Create a dummy game to calculate the actual shape once
         example_obs = self._get_obs(0)
@@ -165,62 +165,65 @@ class TNFEnv(gym.Env):
         # Use 'slices' to update the buffer instead of concatenating
         # This writes directly to the existing memory        
         game = self.game
+        partner_id = (player_id + 2) % 4
         
-        # 0. Reset buffer (Ensure size is 150 in __init__)
+        # 0. Reset buffer (Ensure size is 214 in __init__)
+        # New size logic: 150 + 64 (for split trick encoding) = 214
         self._state_buffer.fill(0.0)
         
         # 1. Hand encoding [0:31]
         self._state_buffer[0:32] = game.current_hand_masks[player_id]
         
-        # 2. Current Trick [32:63]
-        for c_idx, _ in game.current_trick:
-            self._state_buffer[32 + c_idx] = 1.0
+        # 2. Split Trick Encoding [32:95]
+        # [32:63] Cards played by Partner
+        # [64:95] Cards played by Opponents (either of the two)
+        for c_idx, p_idx in game.current_trick:
+            if p_idx == partner_id:
+                self._state_buffer[32 + c_idx] = 1.0
+            elif p_idx != player_id: # It's an opponent
+                self._state_buffer[64 + c_idx] = 1.0
             
-        # 3. Merged Trick Logic: Winner, Highest Card, Partner Flag, Trick Winner ID
+        # 3. Trick Metadata [96:159]
         if game.current_trick:
             winner, high_card_idx = game.current_trick_winner()
             
-            # [64:95] Highest Card bitmask
-            self._state_buffer[64 + high_card_idx] = 1.0
+            # [96:127] Highest Card on table bitmask (Critical for 'beating' current high)
+            self._state_buffer[96 + high_card_idx] = 1.0
             
-            # [108] Partner winning flag
-            partner_id = (player_id + 2) % 4
-            if winner == partner_id:
-                self._state_buffer[108] = 1.0
-                
-            # [145] Trick winner ID (normalized)
-            self._state_buffer[145] = winner / 3.0
-            
-            # [96:99] Lead Suit one-hot
+            # [128:131] Lead Suit one-hot
             lead_suit_idx = game.current_trick[0][0] // 8
-            self._state_buffer[96 + lead_suit_idx] = 1.0
+            self._state_buffer[128 + lead_suit_idx] = 1.0
+            
+            # [140] Partner winning flag (Explicit "don't trump your partner" signal)
+            if winner == partner_id:
+                self._state_buffer[140] = 1.0
+                
+            # [209] Trick winner ID (normalized)
+            self._state_buffer[209] = winner / 3.0
 
-        # 4. Trump [100:103] and Position [104:107]
-        self._state_buffer[100 + game.trump_suit_idx] = 1.0
-        self._state_buffer[104 + len(game.current_trick)] = 1.0
+        # 4. Trump [132:135] and Position [136:139]
+        self._state_buffer[132 + game.trump_suit_idx] = 1.0
+        self._state_buffer[136 + len(game.current_trick)] = 1.0
 
-        # 5. Trick Number [109]
-        self._state_buffer[109] = game.trick_number / 8.0
+        # 5. Trick Number [141]
+        self._state_buffer[141] = game.trick_number / 8.0
 
-        # 6. Played Cards History [110:141]
-        self._state_buffer[110:142] = game.played_cards_mask
+        # 6. Played Cards History (Memory) [142:173]
+        self._state_buffer[142:174] = game.played_cards_mask
 
-        # 7. Points [142:144]
+        # 7. Points [174:176] - Rescaled to 152 for stronger signal
+        # 152 is half of 304; usually team pts don't cross this unless crushing
         our_pts = game.team_points[player_id % 2]
         opp_pts = game.team_points[1 - (player_id % 2)]
-        self._state_buffer[142] = our_pts / 304.0
-        self._state_buffer[143] = opp_pts / 304.0
-        self._state_buffer[144] = (our_pts - opp_pts) / 304.0
+        self._state_buffer[174] = our_pts / 152.0
+        self._state_buffer[175] = opp_pts / 152.0
+        self._state_buffer[176] = (our_pts - opp_pts) / 100.0 # Raw diff signal
         
-        # 8. Cards Remaining Per Suit [146:149]
-        # Counts cards not yet played in each suit
-        # Reshape (32,) -> (4, 8), sum across the ranks, then normalize
+        # 8. Cards Remaining Per Suit [177:180]
         played_per_suit = game.played_cards_mask.reshape(4, 8).sum(axis=1)
-        self._state_buffer[146:150] = (8.0 - played_per_suit) / 8.0        
-        
+        self._state_buffer[177:181] = (8.0 - played_per_suit) / 8.0        
 
-        return self._state_buffer.copy()
-    
+        return self._state_buffer.copy()    
     def update_opponents(self, model_path):
         """Called by the training callback to swap opponent logic to a frozen model."""
         from sb3_contrib import MaskablePPO
