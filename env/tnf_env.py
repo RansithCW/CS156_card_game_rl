@@ -1,5 +1,6 @@
 #TODO: Gym wrapper for TNF 
 from pickle import NONE
+import random
 import re
 from tabnanny import verbose
 from agents.greedy_agent import GreedyAgent
@@ -224,27 +225,28 @@ class TNFEnv(gym.Env):
         self._state_buffer[177:181] = (8.0 - played_per_suit) / 8.0        
 
         return self._state_buffer.copy()    
-    def update_opponents(self, model_path):
+    def update_opponents(self, model_paths):
         """Called by the training callback to swap opponent logic to a frozen model."""
         from sb3_contrib import MaskablePPO
         from agents.rl_agent import RLAgent
         
-        # Load the latest snapshot
-        frozen_model = MaskablePPO.load(model_path)
-        
-        # Wrap it in our RLAgent helper (using deterministic=False for variety)
-        new_rl_opponent = RLAgent(frozen_model, deterministic=False)
-        
-        # Update your internal opponent list (Players 1, 2, 3)
-        # Note: Player 0 is the one being trained
-        self.opponents = {
-            1: new_rl_opponent,
-            2: new_rl_opponent,
-            3: new_rl_opponent
-        }
+        # randomly choose one of provided models
+        opponents = random.choices(model_paths, k=3)
+            
+        for i in range(1, 4):
+            model_path = opponents[i - 1]
+            # Load the latest snapshot
+            frozen_model = MaskablePPO.load(model_path)
+            
+            # Wrap it in our RLAgent helper (using deterministic=False for variety)
+            new_rl_opponent = RLAgent(frozen_model, deterministic=False)
+            
+            # Update your internal opponent list (Players 1, 2, 3)
+            # Note: Player 0 is the one being trained
+            self.opponents[i] = new_rl_opponent
         
         if self.verbose:
-            print(f"--- Opponents updated to snapshot: {model_path} ---")
+            print(f"--- Opponents updated to snapshot: {opponents} ---")
 
     def _get_opponent_action(self, player_id, obs):
         """Helper to get action from whichever opponent type is currently set."""

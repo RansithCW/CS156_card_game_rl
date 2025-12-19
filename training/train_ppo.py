@@ -14,17 +14,25 @@ np.random.seed(SEED)
 # Callback to handle self-play opponent updates
 class SelfPlayCallback(BaseCallback):
     """Saves a model snapshot and updates env opponents every N steps."""
-    def __init__(self, check_freq, save_path):
+    def __init__(self, check_freq, save_path, version=0):
         super().__init__()
         self.check_freq = check_freq
         self.save_path = save_path
+        self.version = version
+        self.snapshot_pool = [] # Keep track of saved snapshots
+        os.makedirs(self.save_path, exist_ok=True)
 
     def _on_step(self) -> bool:
         if self.n_calls % self.check_freq == 0:
-            path = os.path.join(self.save_path, f"snapshot_{self.n_calls}.zip")
-            self.model.save(path)
+            new_snapshot_path = os.path.join(self.save_path, f"snapshot_v{self.version}_{self.n_calls}.zip")
+            self.model.save(new_snapshot_path)
+            
+            # 2. Add to our central pool
+            if new_snapshot_path not in self.snapshot_pool:
+                self.snapshot_pool.append(new_snapshot_path)
+            print(f"Saved new snapshot: {new_snapshot_path}")
             # Update all vectorized environments
-            self.training_env.env_method("update_opponents", path)
+            self.training_env.env_method("update_opponents", self.snapshot_pool)
         return True
 
 def train(
@@ -34,7 +42,7 @@ def train(
     device='cpu', 
     check_freq=50_000, 
     logging=False,
-    version=1
+    version=0
     ):
     # 1. Create Env with the specific opponent type
     def make_env():
@@ -50,7 +58,7 @@ def train(
 
     # Log directory for TensorBoard plots
     log_dir = f"./logs/tnf_{game_type}/"
-    snapshot_dir = f"./models/snapshots_{game_type}_{version}/" # Folder for self-play history    
+    snapshot_dir = f"./models/snapshots_{game_type}_version{version}/" # Folder for self-play history    
     
     # 2. LOAD or CREATE model
     if load_path and os.path.exists(load_path):
@@ -72,7 +80,8 @@ def train(
     # check_freq: how often to update opponents (e.g., every 50,000 steps)
     self_play_callback = SelfPlayCallback(
         check_freq=check_freq, 
-        save_path=snapshot_dir
+        save_path=snapshot_dir,
+        version=version
     )
 
     # 4. Train with Callback
