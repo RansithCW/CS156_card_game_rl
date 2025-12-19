@@ -59,9 +59,9 @@ class TNFEnv(gym.Env):
         tricks = []
         
         # Autoplay until agent's turn
-        while self.game.current_player != self.agent_id:
+        while self.game.current_player != self.agent_id and len(self.game.current_trick) < 8: # just for safe
             pid = self.game.current_player
-            card = self.opponents[pid].select_action(self.game, pid)
+            card = self._get_opponent_action(pid, self.game)
             self.game.play_card(pid, card)
 
             if len(self.game.current_trick) == 4:
@@ -134,7 +134,7 @@ class TNFEnv(gym.Env):
         # 3. Autoplay opponents until it's agent's turn or game ends
         while not self.done and self.game.current_player != self.agent_id:
             pid = self.game.current_player
-            card = self.opponents[pid].select_action(self.game, pid)
+            card = self._get_opponent_action(pid, self.game)
             self.game.play_card(pid, card)
             
             r, tricks = self._process_trick_resolution()

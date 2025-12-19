@@ -17,13 +17,13 @@ class RLAgent:
         action_mask: np.ndarray of shape (32,), 1 = legal, 0 = illegal
         """
         if not isinstance(obs, np.ndarray):
-            obs = np.array(obs, np.ndarray)
+            obs = np.array(obs, dtype=np.float32)
 
         obs_tensor = torch.tensor(obs[None], dtype=torch.float32, device=self.device)
         with torch.no_grad():
             action, _ = self.model.predict(
-                obs_tensor,
-                action_mask=action_mask, 
+                obs_tensor.cpu().numpy(),
+                action_masks=action_mask,
                 deterministic=self.deterministic
                 )
 
