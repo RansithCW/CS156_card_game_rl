@@ -87,9 +87,9 @@ class TNFEnv(gym.Env):
             # Team Scoring
             # If agent or partner (team 0 & 2) wins, add pts
             if winner % 2 == self.agent_id % 2:
-                reward += points
+                reward += points*0.1
             else:
-                reward -= points
+                reward -= points*0.15 # slightly higher penalty for losing pts
                 
             if self.verbose and cards is not None:
                 resolved_tricks.append({
@@ -101,7 +101,7 @@ class TNFEnv(gym.Env):
             if self.game.is_terminal():
                 self.done = True
                 # Final reward adjustment based on total points
-                reward += 50.0 if self.game.team_points[self.agent_id % 2] > self.game.team_points[1 - (self.agent_id % 2)] else -50.0
+                reward += 10.0 if self.game.team_points[self.agent_id % 2] > self.game.team_points[1 - (self.agent_id % 2)] else -15.0
                 # penalty for losing, vs. small bonus for winning
                 
         return reward, resolved_tricks

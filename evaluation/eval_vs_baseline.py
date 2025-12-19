@@ -1,4 +1,5 @@
 import numpy as np
+from matplotlib import pyplot as plt
 
 from env.tnf_env import TNFEnv
 from agents.random_agent import RandomAgent
@@ -26,7 +27,13 @@ def run_episode(env, agents, render=False):
 
     return total_reward
 
-def evaluate(num_episodes: int = 100, render: bool = False, model_path: str = "models/stage_random/tnf_random_300000steps.zip"):
+def evaluate(
+    num_episodes=100, 
+    render=False, 
+    model_path="models/stage_random/tnf_random_300000steps.zip", 
+    plot_hist=False,
+    game_type='random'
+    ):
     env = TNFEnv()
     
     # Load trained model
@@ -37,15 +44,34 @@ def evaluate(num_episodes: int = 100, render: bool = False, model_path: str = "m
         0: RLAgent(model),
         1: RandomAgent(),
         2: RandomAgent(),
-        3: GreedyAgent(),
+        3: RandomAgent(),
     }
+    
+    if game_type == 'greedy':
+        agents[1] = GreedyAgent()
+        agents[2] = GreedyAgent()
+        agents[3] = GreedyAgent()
+    
+    elif game_type == 'mixed':
+        agents[1] = GreedyAgent()
     
     rewards = []
     for _ in range(num_episodes):
         rewards.append(run_episode(env, agents, render))
         
+    if plot_hist:
+        # plot histogram of rewards
+        plt.hist(rewards, bins=20)
+        plt.title(f"Evaluation over {num_episodes} episodes")
+        plt.xlabel("Total Reward")
+        plt.ylabel("Frequency")
+        plt.show()
+        
+    
     print(f"Mean reward over {num_episodes} episodes: {np.mean(rewards)}")
     print(f"Std: {np.std(rewards)}")
+    
+    return np.mean(rewards)
     
 
 if __name__ == "__main__":
